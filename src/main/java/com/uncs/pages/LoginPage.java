@@ -147,7 +147,10 @@ public class LoginPage {
 		typeInto(PASSWORD_FIELD, pass);
 
 		SUBMIT.click();
-		Wait.untilOrFail(() -> !page.url().contains("/auth/login"), 15,
+
+		// The same signal the email sign in waits on, and for the same reason: the address
+		// changes late here, or not at all.
+		Wait.untilOrFail(this::hasLeftTheLoginPage, 15,
 				"the browser never left the login page");
 		System.out.println("Logged In Successfully! Landed on: " + page.url());
 
@@ -289,13 +292,36 @@ public class LoginPage {
 
 	public boolean isLoggedIn() {
 
-		return !page.url().contains("/auth/login");
+		// The same two signals the submit waits on, and for the same reason: this
+		// application changes its address after it has changed its screen, so a sign in that
+		// has plainly worked can still be sitting on the old URL for a while.
+		return hasLeftTheLoginPage();
 
 	}
 
 
 	/** How many times to press Login before giving up on it taking. */
 	private static final int SUBMIT_ATTEMPTS = 3;
+
+	/**
+	 * Whether the sign in has actually gone through.
+	 *
+	 * Asked two ways, because the obvious one is not reliable here. This application changes
+	 * its address well after it has changed its screen - late enough that a thirty second
+	 * wait on the URL alone timed out on a sign in that had plainly worked, and then pressed
+	 * Login again at a page that no longer had the button, which is the timeout the suite
+	 * actually reported. Twenty two of twenty five scenarios failed that way, every one of
+	 * them after the server had answered every call with a 200.
+	 *
+	 * The form going away is the earlier and truer signal: the login form is gone the moment
+	 * the application accepts the sign in, whatever the address bar still says. The URL is
+	 * kept as well because it costs nothing and is the clearer of the two when it is right.
+	 */
+	private boolean hasLeftTheLoginPage() {
+
+		return !page.url().contains("/auth/login") || SUBMIT.count() == 0;
+
+	}
 
 	/**
 	 * How long one press gets to move the browser off the login page.
@@ -338,7 +364,7 @@ public class LoginPage {
 				SUBMIT.first().dispatchEvent("click");
 			}
 
-			if (Wait.until(() -> !page.url().contains("/auth/login"), SUBMIT_SETTLE_SECONDS)) {
+			if (Wait.until(this::hasLeftTheLoginPage, SUBMIT_SETTLE_SECONDS)) {
 				return;
 			}
 

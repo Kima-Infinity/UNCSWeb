@@ -229,6 +229,11 @@ public class BrowserFactory {
 		// before anything happens on the page.
 		com.uncs.support.ConsoleLog.attach(page);
 
+		// Responses are events too, and for the same reason the listener has to be in place
+		// before the first navigation: the calls that set the page up are never seen
+		// otherwise, and those are often the ones that explain a failure.
+		com.uncs.support.ApiLog.attach(page);
+
 		page.navigate(url);
 
 		return page;

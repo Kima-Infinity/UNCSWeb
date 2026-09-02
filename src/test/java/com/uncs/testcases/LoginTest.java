@@ -5,7 +5,11 @@ import com.uncs.utility.BrowserFactory;
 import com.uncs.utility.ConfigDataProvider;
 import com.uncs.utility.ExcelDataProvider;
 import com.microsoft.playwright.Page;
+import com.uncs.utility.FailureReport;
+import com.uncs.utility.Helper;
+import org.testng.ITestResult;
 import org.testng.annotations.AfterClass;
+import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
@@ -71,6 +75,29 @@ public class LoginTest {
 
 		System.out.println("Test Completed!");
 
+	}
+
+	/**
+	 * Explains a failure here the way the Cucumber suite explains one of its own.
+	 *
+	 * This test is not a scenario, so Cucumber's After hook never sees it and it used to
+	 * fail with nothing but an assertion message - which is the least useful failure in the
+	 * suite, because it is the one people run first to find out whether anything works at
+	 * all. It runs before the class tear down, so the page is still open and still has its
+	 * calls to give.
+	 */
+	@AfterMethod(alwaysRun = true)
+	public void reportFailure(ITestResult result) {
+
+		if (result.getStatus() != ITestResult.FAILURE || driver == null) {
+			return;
+		}
+
+		String screenshotPath = Helper.captureScreenShot(driver);
+
+		System.out.println(FailureReport.ofTest(
+				result.getTestClass().getName(), result.getMethod().getMethodName(),
+				driver, screenshotPath));
 	}
 
 	@AfterClass(alwaysRun = true)

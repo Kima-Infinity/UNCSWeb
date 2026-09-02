@@ -76,7 +76,16 @@ public class HomePage {
 	/** True once the session has left the auth pages, which is where a signed in user lands. */
 	public boolean isOnHomePage() {
 
-		return Wait.until(() -> !page.url().contains("/auth/"), 15);
+		// Asked of the navigation rail rather than the address, because this application
+		// changes its screen well before - and sometimes without ever - changing its URL.
+		// Waiting on the address alone reported "still on an auth page" for a sign in that
+		// had visibly worked, and it did so for most of the suite: every scenario signs in,
+		// so every scenario failed here while the server answered every call with a 200.
+		//
+		// The navigation rail only exists once a session does, which makes it the honest
+		// question. The URL is still accepted when it does change, since that is the
+		// clearer signal on the occasions it arrives.
+		return Wait.until(() -> !page.url().contains("/auth/") || chatsButton.count() > 0, 15);
 
 	}
 

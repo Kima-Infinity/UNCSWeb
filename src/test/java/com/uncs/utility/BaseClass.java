@@ -169,6 +169,27 @@ public class BaseClass {
 		}
 	}
 
+	/**
+	 * Puts the screenshot into the Cucumber report.
+	 *
+	 * Best effort. A run that cannot read back the file it just wrote is still a run worth
+	 * reporting, and the path is named in the text report either way.
+	 */
+	private static void attachScreenshot(Scenario scenario, String screenshotPath) {
+
+		if (screenshotPath == null || screenshotPath.isBlank()) {
+			return;
+		}
+
+		try {
+			byte[] picture = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(screenshotPath));
+			scenario.attach(picture, "image/png", "the screen when it failed");
+		} catch (Exception cannotAttach) {
+			System.out.println("Could not attach the screenshot to the Cucumber report: "
+					+ cannotAttach.getMessage());
+		}
+	}
+
 	@After
 	public void cucumberTearDown(Scenario scenario) {
 
@@ -179,14 +200,33 @@ public class BaseClass {
 			// gone and has no other way to know what the run last saw.
 			System.setProperty("last.screenshot.path", screenshotPath == null ? "" : screenshotPath);
 
-			if (logger != null) {
-				if (scenario.isFailed()) {
+			if (scenario.isFailed()) {
+
+				// Built once, before the browser is closed: the calls it made are read off
+				// the page, and a closed page has none to give.
+				String failureReport = FailureReport.of(scenario, driver, screenshotPath);
+
+				// To the console, so a terminal run shows it without opening anything.
+				System.out.println(failureReport);
+
+				// To the Cucumber report and the JSON, so CI carries it too - along with
+				// the picture, which otherwise reached the Extent HTML alone.
+				scenario.attach(failureReport.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+						"text/plain", "how to reproduce, and what the API said");
+
+				attachScreenshot(scenario, screenshotPath);
+
+				if (logger != null) {
+					logger.fail("<pre>" + failureReport
+							.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+							+ "</pre>");
 					logger.fail("Scenario Failed",
 							MediaEntityBuilder.createScreenCaptureFromPath(screenshotPath).build());
-				} else {
-					logger.pass("Scenario Passed",
-							MediaEntityBuilder.createScreenCaptureFromPath(screenshotPath).build());
 				}
+
+			} else if (logger != null) {
+				logger.pass("Scenario Passed",
+						MediaEntityBuilder.createScreenCaptureFromPath(screenshotPath).build());
 			}
 
 		} catch (Exception e) {
