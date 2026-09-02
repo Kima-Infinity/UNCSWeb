@@ -5,6 +5,7 @@ import com.uncs.utility.BrowserFactory;
 import com.uncs.utility.ConfigDataProvider;
 import com.uncs.utility.ExcelDataProvider;
 import com.microsoft.playwright.Page;
+import com.uncs.utility.BaseClass;
 import com.uncs.utility.FailureReport;
 import com.uncs.utility.Helper;
 import org.testng.ITestResult;
@@ -88,6 +89,10 @@ public class LoginTest {
 	 */
 	@AfterMethod(alwaysRun = true)
 	public void reportFailure(ITestResult result) {
+
+		// Counted whichever way it went, so the report email's verdict covers this test too
+		// and not only the scenarios.
+		BaseClass.record(result.getStatus() == ITestResult.FAILURE);
 
 		if (result.getStatus() != ITestResult.FAILURE || driver == null) {
 			return;

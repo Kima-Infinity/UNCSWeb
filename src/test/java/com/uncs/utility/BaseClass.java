@@ -41,6 +41,42 @@ public class BaseClass {
 	public static String reportPath;
 
 	/**
+	 * What the run came to, counted as it went.
+	 *
+	 * Counted here rather than read back out of the report, because the tear downs already
+	 * know the answer for every scenario and every test as it finishes, and the report is
+	 * an HTML file that would have to be parsed to be asked.
+	 */
+	private static int passed;
+
+	private static int failed;
+
+	/** PASSED only when nothing failed. One failure is a failed run. */
+	public static String outcome() {
+
+		return failed == 0 ? "PASSED" : "FAILED";
+
+	}
+
+	/** "3 passed, 1 failed", for a subject line and the top of the body. */
+	public static String tally() {
+
+		return passed + " passed, " + failed + " failed";
+
+	}
+
+	/** Records how one scenario or test ended. */
+	public static void record(boolean testFailed) {
+
+		if (testFailed) {
+			failed++;
+		} else {
+			passed++;
+		}
+	}
+
+
+	/**
 	 * Opens the browser once per scenario and points it at the login page.
 	 *
 	 * order = 0 so this runs before any other Before hook a step definition class might
@@ -144,6 +180,7 @@ public class BaseClass {
 			}
 
 			String body = "<h3>UNCS Test Automation Report</h3>"
+					+ "<p><b>" + outcome() + "</b> &mdash; " + tally() + ".</p>"
 					+ "<p>The attached report covers the run that finished at "
 					+ Helper.getCurrentDateTime() + ".</p>";
 
@@ -160,7 +197,8 @@ public class BaseClass {
 					config.getMailFrom(),
 					config.getMailPassword(),
 					config.getMailTo(),
-					"UNCS Test Automation Report - " + Helper.getCurrentDateTime(),
+					"UNCS Test Automation Report - " + outcome() + " - " + tally()
+							+ " - " + Helper.getCurrentDateTime(),
 					body,
 					attachments);
 
@@ -192,6 +230,8 @@ public class BaseClass {
 
 	@After
 	public void cucumberTearDown(Scenario scenario) {
+
+		record(scenario.isFailed());
 
 		try {
 			String screenshotPath = Helper.captureScreenShot(driver);
