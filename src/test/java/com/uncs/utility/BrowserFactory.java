@@ -35,15 +35,30 @@ import java.util.concurrent.ConcurrentHashMap;
 public class BrowserFactory {
 
 	/**
-	 * The viewport every run gets.
+	 * The size a headless run gets.
 	 *
-	 * Selenium maximised a visible window and asked for 1920x1080 when headless. Playwright
-	 * has no window to maximise, so both modes get the same size and the desktop layout is
-	 * what the locators always meet.
+	 * Headless has no window to maximise and no screen to measure, and a build agent must
+	 * render the same page every time or a scenario can pass on a desk and fail in CI for a
+	 * reason nobody can see. So headless is always this, whatever the machine underneath it
+	 * happens to have. It is also what a headed run falls back to if the screen cannot be
+	 * measured for the warning below.
 	 */
-	private static final int VIEWPORT_WIDTH = 1920;
+	private static final int HEADLESS_WIDTH = 1920;
 
-	private static final int VIEWPORT_HEIGHT = 1080;
+	private static final int HEADLESS_HEIGHT = 1080;
+
+	/**
+	 * The width below which the site stops being the one the suite was written against.
+	 *
+	 * Somewhere around here it changes to its mobile layout and the locators stop matching.
+	 * A maximised window is whatever the screen is, so this cannot be enforced - but a run
+	 * on a screen narrower than this is worth a word before the failures start arriving,
+	 * because the cause is the machine rather than the application.
+	 */
+	private static final int NARROW_SCREEN_WIDTH = 1280;
+
+	/** Whether the narrow-screen warning has already been given this run. */
+	private static boolean warned;
 
 	/**
 	 * How long a page load may take.
@@ -103,6 +118,74 @@ public class BrowserFactory {
 	}
 
 	/**
+	 * How the browser window is asked for.
+	 *
+	 * A headed run is maximised, so it fills the screen it is actually on and nothing hangs
+	 * off the edge. That matters on a scaled display: a 1920x1080 panel at 125% scaling
+	 * offers applications 1536x864, so the fixed 1920 this used to ask for was wider than
+	 * the screen had to give and the remainder spilled onto whatever monitor sat beside it.
+	 * Maximising asks the window manager for the answer instead of working it out here, and
+	 * the window manager is never wrong about its own screen.
+	 *
+	 * Headless has no window to maximise, so there the size is stated outright.
+	 */
+	private static List<String> launchArgs() {
+
+		return isHeadless()
+				? List.of("--window-size=" + HEADLESS_WIDTH + "," + HEADLESS_HEIGHT)
+				: List.of("--start-maximized");
+	}
+
+	/**
+	 * Says so when the screen is too narrow for the layout the suite expects.
+	 *
+	 * Once per run, and only a warning: the run is still worth attempting and the machine is
+	 * not something the suite can change. But a locator that has always matched suddenly not
+	 * matching is a confusing thing to debug, and "this screen is narrower than the desktop
+	 * layout needs" is the sentence that saves the hour.
+	 */
+	private static synchronized void warnIfScreenIsNarrow() {
+
+		if (warned || isHeadless()) {
+			return;
+		}
+
+		warned = true;
+
+		int width = screenWidth();
+
+		if (width < NARROW_SCREEN_WIDTH) {
+			System.out.println("This screen is " + width + " logical pixels wide, under the "
+					+ NARROW_SCREEN_WIDTH + " the desktop layout needs. The site may render "
+					+ "its mobile layout, in which case locators will not match.");
+		}
+	}
+
+	/**
+	 * The primary screen's width in logical pixels - the unit Chromium sizes windows in.
+	 *
+	 * The default screen device rather than getMaximumWindowBounds, which is documented to
+	 * be allowed to return the whole virtual desktop on a multi-screen machine, and would
+	 * therefore call a narrow laptop wide as soon as a second monitor was plugged in.
+	 */
+	private static int screenWidth() {
+
+		try {
+			if (java.awt.GraphicsEnvironment.isHeadless()) {
+				return HEADLESS_WIDTH;
+			}
+
+			return java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+					.getDefaultScreenDevice().getDefaultConfiguration().getBounds().width;
+
+		} catch (Throwable noScreen) {
+			// A machine with no display, or one that will not say. Assume it is fine rather
+			// than warn about something that was never measured.
+			return HEADLESS_WIDTH;
+		}
+	}
+
+	/**
 	 * Opens a tab at {@code url} and hands back the page everything else works with.
 	 *
 	 * There is no implicit wait to set. Selenium needed one because findElement asked the
@@ -116,13 +199,24 @@ public class BrowserFactory {
 
 			browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
 					.setHeadless(isHeadless())
-					// Chromium's own default window would put the site in its mobile layout
-					// before the viewport below is applied.
-					.setArgs(List.of("--window-size=" + VIEWPORT_WIDTH + "," + VIEWPORT_HEIGHT)));
+					.setArgs(launchArgs()));
 		}
 
-		BrowserContext context = browser.newContext(new Browser.NewContextOptions()
-				.setViewportSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT));
+		warnIfScreenIsNarrow();
+
+		// A headed run gets no viewport at all, which is what lets the page fill the
+		// maximised window. Playwright's default is to fix the viewport at 1280x720 and
+		// leave the rest of the window blank, so the setting has to be turned off rather
+		// than merely left alone - setViewportSize(null) is how that is spelled.
+		Browser.NewContextOptions options = new Browser.NewContextOptions();
+
+		if (isHeadless()) {
+			options.setViewportSize(HEADLESS_WIDTH, HEADLESS_HEIGHT);
+		} else {
+			options.setViewportSize(null);
+		}
+
+		BrowserContext context = browser.newContext(options);
 
 		context.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MILLIS);
 
